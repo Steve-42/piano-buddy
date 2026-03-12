@@ -1,10 +1,35 @@
 // LLM 服务：调用 OpenAI 兼容 API 生成有温度的鼓励语
 
 import { getSettings } from './db'
+import { BUILTIN_LLM } from '../types'
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
+}
+
+// 解析有效的 LLM 配置：用户自定义 > 内置默认
+interface LLMConfig {
+  llmApiEndpoint: string
+  llmApiKey: string
+  llmModel: string
+}
+
+function resolveLLMConfig(settings: LLMConfig): LLMConfig | null {
+  // 用户配置了自己的 Key，优先使用
+  if (settings.llmApiKey) {
+    return settings
+  }
+  // 否则使用内置配置（如果有）
+  if (BUILTIN_LLM.apiKey) {
+    return {
+      llmApiEndpoint: BUILTIN_LLM.endpoint,
+      llmApiKey: BUILTIN_LLM.apiKey,
+      llmModel: BUILTIN_LLM.model,
+    }
+  }
+  // 都没有，返回 null
+  return null
 }
 
 // 鼓励消息的上下文
@@ -64,12 +89,13 @@ export async function generateEncouragement(
   context: EncouragementContext,
 ): Promise<string> {
   const settings = await getSettings()
+  const config = resolveLLMConfig(settings)
 
-  if (!settings.llmApiKey) {
+  if (!config) {
     return getDefaultEncouragement(context)
   }
 
-  return await callLLM(settings, [
+  return await callLLM(config, [
     { role: 'system', content: ENCOURAGEMENT_SYSTEM_PROMPT },
     { role: 'user', content: buildEncouragementMessage(context) },
   ])
@@ -82,8 +108,9 @@ export async function generateReminder(context: {
   lastSessionDuration: number | null // 上次练习时长（秒）
 }): Promise<string> {
   const settings = await getSettings()
+  const config = resolveLLMConfig(settings)
 
-  if (!settings.llmApiKey) {
+  if (!config) {
     return getDefaultReminder(context)
   }
 
@@ -104,7 +131,7 @@ export async function generateReminder(context: {
 请生成一条温暖的提醒。`
 
   try {
-    return await callLLM(settings, [
+    return await callLLM(config, [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userMessage },
     ])

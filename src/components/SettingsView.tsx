@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { getSettings, updateSettings } from '../services/db'
 import type { UserSettings } from '../types'
-import { DEFAULT_SETTINGS } from '../types'
+import { DEFAULT_SETTINGS, BUILTIN_LLM } from '../types'
 
 interface SettingsViewProps {
   onBack: () => void
@@ -119,10 +119,11 @@ export function SettingsView({ onBack }: SettingsViewProps) {
             </div>
 
             {!settings.llmApiKey && (
-              <div className="bg-amber-900/20 border border-amber-700/30 rounded-lg p-3">
-                <p className="text-sm text-amber-300">
-                  未配置 API Key 时将使用内置的默认鼓励语。
-                  配置后可获得更个性化的 AI 鼓励。
+              <div className="bg-emerald-900/20 border border-emerald-700/30 rounded-lg p-3">
+                <p className="text-sm text-emerald-300">
+                  {BUILTIN_LLM.apiKey
+                    ? '已启用内置 AI 鼓励，无需配置即可使用。填写自己的 API Key 可切换为自定义模型。'
+                    : '未配置 API Key 时将使用内置的默认鼓励语。配置后可获得更个性化的 AI 鼓励。'}
                 </p>
               </div>
             )}
