@@ -7,52 +7,71 @@ interface ChatMessage {
   content: string
 }
 
-// 生成练习结束后的鼓励消息
-export async function generateEncouragement(context: {
+// 鼓励消息的上下文
+export interface EncouragementContext {
   activeDuration: number // 实际弹奏秒数
   totalDuration: number // 总时长秒数
   dailyGoal: number // 每日目标（分钟）
   streak: number // 连续练习天数
   daysSinceLastPractice: number // 距上次练习的天数
-}): Promise<string> {
+  timeOfDay: string // 练习时段（如 "晚上 21:30"）
+  weeklyTotalMin: number // 本周累计弹奏（分钟）
+  lastWeekTotalMin: number // 上周累计弹奏（分钟）
+}
+
+const ENCOURAGEMENT_SYSTEM_PROMPT = `你是 Piano Buddy，一个温暖、真诚的钢琴练习伙伴。
+
+## 你的身份
+- 像一个关心对方的好朋友，不是老师或教练
+- 你在陪伴用户的练琴旅程，注意到他们的每一点变化
+
+## 回复规则
+1. 简短有力：2-3 句话，不超过 80 字
+2. 基于数据：必须引用至少一个具体数字或事实
+3. 禁止空洞的话："继续加油""你很棒"这类不说
+4. 语气自然：像朋友发微信，不像机器人
+5. 如果练习时间很短，肯定"坐下来开始"的行为本身
+
+## 可以关注的角度（选 1-2 个，不要全用）
+- 专注度：弹奏时间占总时间的比例
+- 时段：早起/深夜练琴值得一提
+- 趋势：和最近几天对比，是否有变化
+- 目标：完成度、超额或差一点
+- 坚持：连续天数是一个里程碑
+- 回归：中断后重新开始很难得`
+
+function buildEncouragementMessage(context: EncouragementContext): string {
+  const activeMin = Math.round(context.activeDuration / 60)
+  const totalMin = Math.round(context.totalDuration / 60)
+  const focusRatio = context.totalDuration > 0
+    ? Math.round((context.activeDuration / context.totalDuration) * 100)
+    : 0
+  const goalCompletion = Math.round((activeMin / context.dailyGoal) * 100)
+
+  return `练习数据：
+- 弹奏 ${activeMin} 分钟 / 总时长 ${totalMin} 分钟（专注度 ${focusRatio}%）
+- 时段：${context.timeOfDay}
+- 今日目标：${context.dailyGoal} 分钟（完成 ${goalCompletion}%）
+- 连续练习：${context.streak} 天
+- 距上次：${context.daysSinceLastPractice} 天
+- 本周累计：${context.weeklyTotalMin} 分钟｜上周：${context.lastWeekTotalMin} 分钟
+
+请给一条简短鼓励。`
+}
+
+// 生成练习结束后的鼓励消息
+export async function generateEncouragement(
+  context: EncouragementContext,
+): Promise<string> {
   const settings = await getSettings()
 
   if (!settings.llmApiKey) {
     return getDefaultEncouragement(context)
   }
 
-  const activeMin = Math.round(context.activeDuration / 60)
-  const totalMin = Math.round(context.totalDuration / 60)
-
-  const systemPrompt = `你是一个温暖、真诚的钢琴练习伙伴。你的任务是在用户完成练琴后给予鼓励。
-
-你的风格：
-- 像一个关心你的好朋友，不是老师或教练
-- 真诚，不要空洞的赞美
-- 注意到具体的细节（练习时长、坚持天数等）
-- 简短有力，2-3 句话即可
-- 如果用户练的时间很短，也要肯定他们坐下来开始的勇气
-- 偶尔用轻松幽默的方式
-
-重要：不要说"继续加油"这类空洞的话。要基于数据说出具体的观察。`
-
-  const userMessage = `用户刚完成一次练琴：
-- 实际弹奏时间：${activeMin} 分钟
-- 总时长：${totalMin} 分钟
-- 每日目标：${context.dailyGoal} 分钟
-- 连续练习：${context.streak} 天
-- 距上次练习：${context.daysSinceLastPractice} 天
-
-请给予简短的鼓励。`
-
-  if (!settings.llmApiKey) {
-    return getDefaultEncouragement(context)
-  }
-
-  // 有 API Key 时调用 LLM，失败则抛出错误让调用方处理
   return await callLLM(settings, [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: userMessage },
+    { role: 'system', content: ENCOURAGEMENT_SYSTEM_PROMPT },
+    { role: 'user', content: buildEncouragementMessage(context) },
   ])
 }
 
@@ -125,7 +144,7 @@ async function callLLM(
     body: JSON.stringify({
       model: settings.llmModel,
       messages,
-      max_tokens: 200,
+      max_tokens: 2000, // 思考模型（如 gemini-2.5-pro）会消耗大量 token 做内部推理
       temperature: 0.8,
     }),
   })

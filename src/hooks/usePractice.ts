@@ -179,7 +179,7 @@ export function usePractice() {
     try {
       const settings = await getSettings()
       const streak = await getStreak()
-      const recent = await getRecentSessions(7)
+      const recent = await getRecentSessions(14) // 取 14 天用于计算本周/上周
 
       // 计算距上次练习天数
       const today = new Date().toISOString().slice(0, 10)
@@ -192,12 +192,50 @@ export function usePractice() {
             )
           : 999
 
+      // 计算练习时段
+      const now = new Date()
+      const hour = now.getHours()
+      const timeLabel =
+        hour < 6 ? '凌晨' :
+        hour < 9 ? '早上' :
+        hour < 12 ? '上午' :
+        hour < 14 ? '中午' :
+        hour < 17 ? '下午' :
+        hour < 19 ? '傍晚' :
+        hour < 22 ? '晚上' : '深夜'
+      const timeOfDay = `${timeLabel} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
+
+      // 计算本周/上周累计弹奏分钟数
+      const dayOfWeek = now.getDay() || 7 // 周日=7
+      const weekStartDate = new Date(now)
+      weekStartDate.setDate(now.getDate() - dayOfWeek + 1)
+      const weekStartStr = weekStartDate.toISOString().slice(0, 10)
+
+      const lastWeekStartDate = new Date(weekStartDate)
+      lastWeekStartDate.setDate(weekStartDate.getDate() - 7)
+      const lastWeekStartStr = lastWeekStartDate.toISOString().slice(0, 10)
+
+      const weeklyTotalMin = Math.round(
+        recent
+          .filter((s) => s.date >= weekStartStr)
+          .reduce((sum, s) => sum + s.activeDuration, 0) / 60,
+      ) + Math.round(activeDuration / 60) // 包含当前练习
+
+      const lastWeekTotalMin = Math.round(
+        recent
+          .filter((s) => s.date >= lastWeekStartStr && s.date < weekStartStr)
+          .reduce((sum, s) => sum + s.activeDuration, 0) / 60,
+      )
+
       const message = await generateEncouragement({
         activeDuration,
         totalDuration,
         dailyGoal: settings.dailyGoalMinutes,
-        streak: streak + (activeDuration > 0 ? 1 : 0), // 包含今天
+        streak: streak + (activeDuration > 0 ? 1 : 0),
         daysSinceLastPractice,
+        timeOfDay,
+        weeklyTotalMin,
+        lastWeekTotalMin,
       })
 
       setState((prev) => ({ ...prev, aiMessage: message }))
