@@ -11,6 +11,12 @@ db.version(1).stores({
   settings: '++id',
 })
 
+// v2: 新增 backgroundImage 字段（Dexie 自动处理，无需修改 stores）
+db.version(2).stores({
+  sessions: '++id, date, startTime',
+  settings: '++id',
+})
+
 // 获取用户设置，如果没有则创建默认设置
 export async function getSettings(): Promise<UserSettings> {
   const existing = await db.settings.toCollection().first()

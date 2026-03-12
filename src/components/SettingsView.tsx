@@ -130,6 +130,52 @@ export function SettingsView({ onBack }: SettingsViewProps) {
           </div>
         </section>
 
+        {/* 背景图片 */}
+        <section className="mb-8">
+          <h2 className="text-lg font-semibold text-white mb-4">花园背景</h2>
+          <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 space-y-4">
+            {settings.backgroundImage && (
+              <div className="relative rounded-lg overflow-hidden h-32">
+                <img
+                  src={settings.backgroundImage}
+                  alt="背景预览"
+                  className="w-full h-full object-cover"
+                />
+                <button
+                  onClick={() => handleChange('backgroundImage', '')}
+                  className="absolute top-2 right-2 bg-black/50 hover:bg-black/70 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm transition-colors"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+            <div>
+              <label className="block text-sm text-slate-400 mb-2">
+                {settings.backgroundImage ? '更换图片' : '选择练习时的背景图片'}
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  const reader = new FileReader()
+                  reader.onload = () => {
+                    handleChange('backgroundImage', reader.result as string)
+                  }
+                  reader.readAsDataURL(file)
+                }}
+                className="w-full text-sm text-slate-400 file:mr-3 file:py-2 file:px-4
+                           file:rounded-lg file:border-0 file:bg-emerald-800/50 file:text-emerald-200
+                           file:hover:bg-emerald-700/50 file:transition-colors file:cursor-pointer"
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                图片仅存储在本地。未设置时使用默认渐变背景。
+              </p>
+            </div>
+          </div>
+        </section>
+
         {/* 保存按钮 */}
         <button
           onClick={handleSave}
