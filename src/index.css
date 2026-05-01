@@ -7,8 +7,8 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: linear-gradient(135deg, #1a2e1a 0%, #2d1f0e 50%, #1a2e1a 100%);
-  color: #e2e8f0;
+  background: linear-gradient(135deg, #f5f0e6 0%, #e8e2d4 50%, #f0ebe0 100%);
+  color: #3d3428;
 }
 
 /* 音符飘落动画 */
@@ -18,10 +18,10 @@ body {
     opacity: 0;
   }
   10% {
-    opacity: 1;
+    opacity: 0.7;
   }
   90% {
-    opacity: 0.8;
+    opacity: 0.5;
   }
   100% {
     transform: translateY(60vh) rotate(20deg);
@@ -41,10 +41,10 @@ body {
 /* 植物成长过渡 */
 .plant-emoji {
   transition: transform 1s ease-out, opacity 0.5s ease-out;
-  filter: drop-shadow(0 0 12px rgba(255, 255, 200, 0.3));
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.1));
 }
 
-/* 花园背景蒙版 */
+/* 花园背景：自定义图片 + 磨砂蒙版 */
 .garden-bg {
   background-size: cover;
   background-position: center;
@@ -55,12 +55,9 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    to bottom,
-    rgba(15, 23, 20, 0.6) 0%,
-    rgba(15, 23, 20, 0.3) 40%,
-    rgba(15, 23, 20, 0.5) 100%
-  );
+  background: rgba(245, 240, 230, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   z-index: 0;
 }
 

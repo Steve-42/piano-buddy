@@ -5,6 +5,7 @@ import type { PracticeStatus } from '../hooks/usePractice'
 import type { DebugInfo } from '../services/audioDetector'
 import { getGrowthStage } from '../types'
 import { getSettings } from '../services/db'
+import { useWakeLock } from '../hooks/useWakeLock'
 
 interface PracticeViewProps {
   status: PracticeStatus
@@ -47,8 +48,12 @@ export function PracticeView({
   const [showDebug, setShowDebug] = useState(false)
   const noteIdRef = useRef(0)
   const isPlaying = status === 'playing'
+  const isPracticing = status === 'playing' || status === 'listening'
   const activeMin = Math.round(activeDuration / 60)
   const stage = getGrowthStage(activeMin)
+
+  // 练习期间阻止屏幕自动锁定
+  useWakeLock(isPracticing)
 
   // 加载背景图片设置
   useEffect(() => {
@@ -87,11 +92,11 @@ export function PracticeView({
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen px-6">
-        <div className="bg-red-900/30 border border-red-700/50 rounded-2xl p-6 max-w-md text-center">
-          <p className="text-red-300 text-lg mb-4">{error}</p>
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-6 max-w-md text-center">
+          <p className="text-red-600 text-lg mb-4">{error}</p>
           <button
             onClick={onReset}
-            className="px-6 py-2 bg-amber-800/60 hover:bg-amber-700/60 text-amber-100 rounded-lg transition-colors"
+            className="px-6 py-2 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-lg transition-colors"
           >
             返回
           </button>
@@ -108,35 +113,34 @@ export function PracticeView({
         style={backgroundImage ? { backgroundImage: `url(${backgroundImage})` } : {}}
       >
         {/* 最终植物状态 */}
-        <div className="text-center mb-6">
+        <div className="mb-6">
           <span
             className="plant-emoji inline-block"
             style={{ transform: `scale(${stage.scale})`, fontSize: '4rem' }}
           >
             {stage.emoji}
           </span>
-          <p className="text-amber-200/80 text-sm mt-4">{stage.label}</p>
         </div>
 
         {/* 练习数据 */}
         <div className="text-center mb-6">
-          <p className="text-amber-200/60 text-sm mb-1">今日练习</p>
-          <p className="text-4xl font-bold text-white mb-1">
+          <p className="text-stone-400 text-sm mb-1">今日练习</p>
+          <p className="text-4xl font-bold text-stone-700 mb-1">
             {formatTime(activeDuration)}
           </p>
-          <p className="text-amber-200/60 text-sm">实际弹奏 {activeMin} 分钟</p>
+          <p className="text-stone-400 text-sm">实际弹奏 {activeMin} 分钟</p>
         </div>
 
         {/* AI 鼓励 */}
         {aiMessage && (
-          <div className="w-full max-w-md bg-amber-900/20 rounded-2xl p-5 mb-6 border border-amber-700/30">
-            <p className="text-amber-50 text-lg leading-relaxed">{aiMessage}</p>
+          <div className="w-full max-w-md bg-white/60 backdrop-blur-sm rounded-2xl p-5 mb-6 border border-stone-200/60">
+            <p className="text-stone-700 text-lg leading-relaxed">{aiMessage}</p>
           </div>
         )}
 
         <button
           onClick={onReset}
-          className="px-8 py-3 bg-emerald-800/50 hover:bg-emerald-700/50 text-emerald-100 rounded-xl text-lg transition-colors border border-emerald-700/30"
+          className="px-8 py-3 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl text-lg transition-colors"
         >
           返回首页
         </button>
@@ -146,55 +150,51 @@ export function PracticeView({
 
   // 练习中
   return (
-    <div
-      className="garden-bg flex flex-col items-center justify-center min-h-screen px-6 overflow-hidden"
-      style={backgroundImage ? { backgroundImage: `url(${backgroundImage})` } : {}}
-    >
-      {/* 飘落的音符 */}
-      {notes.map((note) => (
-        <span
-          key={note.id}
-          className="falling-note"
-          style={{ left: `${note.left}%` }}
-        >
-          {note.emoji}
-        </span>
-      ))}
-
-      {/* 状态提示 */}
-      <div className="mb-4 text-center">
-        <div
-          className={`w-3 h-3 rounded-full mx-auto mb-2 transition-colors duration-500 ${
-            isPlaying
-              ? 'bg-emerald-400 shadow-lg shadow-emerald-400/50'
-              : 'bg-amber-600/50'
-          }`}
-        />
-        <p className="text-amber-200/60 text-sm">
-          {isPlaying ? '检测到琴声，音符飘落中...' : '等待琴声...'}
-        </p>
+    <>
+      {/* 飘落的音符（在 garden-bg 外部，避免 CSS 层级冲突） */}
+      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', overflow: 'hidden', zIndex: 10 }}>
+        {notes.map((note) => (
+          <span
+            key={note.id}
+            className="falling-note"
+            style={{ left: `${note.left}%` }}
+          >
+            {note.emoji}
+          </span>
+        ))}
       </div>
+      <div
+        className="garden-bg flex flex-col items-center justify-center min-h-screen px-6 overflow-hidden"
+        style={backgroundImage ? { backgroundImage: `url(${backgroundImage})` } : {}}
+      >
+
+      {/* 状态指示灯 */}
+      <div
+        className={`w-3 h-3 rounded-full mb-4 transition-colors duration-500 ${
+          isPlaying
+            ? 'bg-emerald-400 shadow-lg shadow-emerald-400/50'
+            : 'bg-stone-300'
+        }`}
+      />
 
       {/* 植物 */}
-      <div className="my-8 text-center">
+      <div className="my-8">
         <span
           className="plant-emoji inline-block"
           style={{ transform: `scale(${stage.scale})`, fontSize: '4rem' }}
         >
           {stage.emoji}
         </span>
-        <p className="text-amber-200/60 text-xs mt-4">{stage.label}</p>
       </div>
 
-      {/* 计时器（弱化显示） */}
+      {/* 计时器 */}
       <div className="text-center mb-2">
-        <p className="text-3xl font-mono font-bold text-white/80 tracking-wider">
+        <p className="text-3xl font-mono font-bold text-stone-600 tracking-wider">
           {formatTime(activeDuration)}
         </p>
-        <p className="text-amber-200/40 text-xs mt-1">弹奏时间</p>
       </div>
       <div className="text-center mb-8">
-        <p className="text-sm font-mono text-amber-200/30">
+        <p className="text-sm font-mono text-stone-300">
           {formatTime(totalDuration)}
         </p>
       </div>
@@ -202,11 +202,12 @@ export function PracticeView({
       {/* 停止按钮 */}
       <button
         onClick={onStop}
-        className="w-20 h-20 rounded-full bg-amber-800/40 hover:bg-amber-700/50
-                   text-amber-200 text-base font-medium
-                   border border-amber-600/30
+        className="w-20 h-20 rounded-full bg-white/60 hover:bg-white/80
+                   text-stone-500 text-base font-medium
+                   border border-stone-200/60
                    transition-all duration-300 active:scale-95
-                   flex items-center justify-center"
+                   flex items-center justify-center
+                   backdrop-blur-sm"
       >
         结束
       </button>
@@ -216,29 +217,29 @@ export function PracticeView({
         <div className="w-full max-w-md mt-6">
           <button
             onClick={() => setShowDebug((prev) => !prev)}
-            className="text-xs text-amber-200/30 hover:text-amber-200/50 transition-colors"
+            className="text-xs text-stone-300 hover:text-stone-500 transition-colors"
           >
             {showDebug ? '隐藏调试' : '调试信息'}
           </button>
           {showDebug && (
-            <div className="mt-2 bg-black/30 rounded-xl p-3 border border-amber-900/30 font-mono text-xs">
-              <p className="text-amber-200/40 mb-2">
+            <div className="mt-2 bg-white/40 backdrop-blur-sm rounded-xl p-3 border border-stone-200/60 font-mono text-xs">
+              <p className="text-stone-400 mb-2">
                 {debug.modelLoaded ? '每 4 秒更新' : debug.topClass || '加载模型中...'}
               </p>
               {debug.modelLoaded && (
                 <div className="grid grid-cols-2 gap-y-1 gap-x-4">
-                  <span className="text-amber-200/40">麦克风</span>
-                  <span className={debug.audioLevel > 0.01 ? 'text-emerald-400' : 'text-red-400'}>
+                  <span className="text-stone-400">麦克风</span>
+                  <span className={debug.audioLevel > 0.01 ? 'text-emerald-500' : 'text-red-400'}>
                     {debug.audioLevel.toFixed(3)}
                   </span>
-                  <span className="text-amber-200/40">识别</span>
-                  <span className="text-amber-200/60">{debug.topClass}</span>
-                  <span className="text-amber-200/40">钢琴</span>
-                  <span className={debug.isPiano ? 'text-emerald-400' : 'text-amber-200/40'}>
+                  <span className="text-stone-400">识别</span>
+                  <span className="text-stone-600">{debug.topClass}</span>
+                  <span className="text-stone-400">钢琴</span>
+                  <span className={debug.isPiano ? 'text-emerald-500' : 'text-stone-400'}>
                     {(debug.pianoScore * 100).toFixed(1)}%
                   </span>
-                  <span className="text-amber-200/40">判定</span>
-                  <span className={debug.result === 'PIANO' ? 'text-emerald-400 font-bold' : 'text-amber-200/40'}>
+                  <span className="text-stone-400">判定</span>
+                  <span className={debug.result === 'PIANO' ? 'text-emerald-500 font-bold' : 'text-stone-400'}>
                     {debug.result === 'PIANO' ? '琴声' : '—'}
                   </span>
                 </div>
@@ -248,5 +249,6 @@ export function PracticeView({
         </div>
       )}
     </div>
+    </>
   )
 }

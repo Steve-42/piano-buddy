@@ -16,6 +16,7 @@ export function HomePage({ onStartPractice, onNavigate }: HomePageProps) {
   const [streak, setStreak] = useState(0)
   const [reminder, setReminder] = useState('')
   const [dailyGoal, setDailyGoal] = useState(30)
+  const [backgroundImage, setBackgroundImage] = useState('')
 
   useEffect(() => {
     loadData()
@@ -31,6 +32,7 @@ export function HomePage({ onStartPractice, onNavigate }: HomePageProps) {
 
     const settings = await getSettings()
     setDailyGoal(settings.dailyGoalMinutes)
+    setBackgroundImage(settings.backgroundImage || '')
 
     // 获取提醒消息
     const recent = await getRecentSessions(7)
@@ -60,20 +62,23 @@ export function HomePage({ onStartPractice, onNavigate }: HomePageProps) {
   const stage = getGrowthStage(todayActiveMinutes)
 
   return (
-    <div className="flex flex-col items-center min-h-screen px-6 py-8">
+    <div
+      className="garden-bg flex flex-col items-center min-h-screen px-6 py-8"
+      style={backgroundImage ? { backgroundImage: `url(${backgroundImage})` } : {}}
+    >
       {/* 顶部导航 */}
       <div className="w-full max-w-md flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-bold text-amber-100">Piano Buddy</h1>
+        <h1 className="text-2xl font-bold text-stone-700">Piano Buddy</h1>
         <div className="flex gap-3">
           <button
             onClick={() => onNavigate('history')}
-            className="text-amber-200/50 hover:text-amber-100 transition-colors"
+            className="text-stone-400 hover:text-stone-600 transition-colors"
           >
             历史
           </button>
           <button
             onClick={() => onNavigate('settings')}
-            className="text-amber-200/50 hover:text-amber-100 transition-colors"
+            className="text-stone-400 hover:text-stone-600 transition-colors"
           >
             设置
           </button>
@@ -83,15 +88,15 @@ export function HomePage({ onStartPractice, onNavigate }: HomePageProps) {
       {/* 连续天数 */}
       {streak > 0 && (
         <div className="mb-6 text-center">
-          <span className="text-4xl font-bold text-amber-400">{streak}</span>
-          <p className="text-amber-200/50 text-sm mt-1">连续练习天数</p>
+          <span className="text-4xl font-bold text-emerald-600">{streak}</span>
+          <p className="text-stone-400 text-sm mt-1">连续练习天数</p>
         </div>
       )}
 
       {/* AI 提醒消息 */}
       {reminder && (
-        <div className="w-full max-w-md bg-amber-900/20 rounded-2xl p-5 mb-6 border border-amber-700/30">
-          <p className="text-amber-50 text-lg leading-relaxed">{reminder}</p>
+        <div className="w-full max-w-md bg-white/60 backdrop-blur-sm rounded-2xl p-5 mb-6 border border-stone-200/60">
+          <p className="text-stone-700 text-lg leading-relaxed">{reminder}</p>
         </div>
       )}
 
@@ -100,13 +105,13 @@ export function HomePage({ onStartPractice, onNavigate }: HomePageProps) {
         <div className="flex items-center gap-3 mb-2">
           <span className="text-2xl">{stage.emoji}</span>
           <div className="flex-1">
-            <div className="flex justify-between text-sm text-amber-200/50 mb-1">
+            <div className="flex justify-between text-sm text-stone-400 mb-1">
               <span>今日练习</span>
               <span>{todayActiveMinutes} / {dailyGoal} 分钟</span>
             </div>
-            <div className="w-full h-3 bg-amber-900/30 rounded-full overflow-hidden">
+            <div className="w-full h-3 bg-stone-200/60 rounded-full overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 rounded-full transition-all duration-500"
+                className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-500"
                 style={{ width: `${goalProgress}%` }}
               />
             </div>
@@ -117,22 +122,22 @@ export function HomePage({ onStartPractice, onNavigate }: HomePageProps) {
       {/* 开始练琴按钮 */}
       <button
         onClick={onStartPractice}
-        className="w-40 h-40 rounded-full bg-gradient-to-br from-emerald-700 to-emerald-600
-                   hover:from-emerald-600 hover:to-emerald-500
-                   text-emerald-50 text-xl font-semibold
-                   shadow-lg shadow-emerald-800/40 hover:shadow-emerald-700/50
+        className="w-40 h-40 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-400
+                   hover:from-emerald-400 hover:to-emerald-300
+                   text-white text-xl font-semibold
+                   shadow-lg shadow-emerald-500/25 hover:shadow-emerald-400/30
                    transition-all duration-300 active:scale-95
                    flex items-center justify-center
-                   border border-emerald-500/20"
+                   border border-emerald-400/30"
       >
         开始练琴
       </button>
 
       {/* 最近一次练习的 AI 消息 */}
       {todaySessions.length > 0 && todaySessions[todaySessions.length - 1].aiMessage && (
-        <div className="w-full max-w-md mt-8 bg-emerald-900/20 rounded-2xl p-5 border border-emerald-700/30">
-          <p className="text-sm text-emerald-300/60 mb-1">上次练习后的鼓励</p>
-          <p className="text-amber-50">
+        <div className="w-full max-w-md mt-8 bg-white/60 backdrop-blur-sm rounded-2xl p-5 border border-emerald-200/60">
+          <p className="text-sm text-emerald-600/60 mb-1">上次练习后的鼓励</p>
+          <p className="text-stone-700">
             {todaySessions[todaySessions.length - 1].aiMessage}
           </p>
         </div>
