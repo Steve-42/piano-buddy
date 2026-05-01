@@ -141,8 +141,9 @@ export async function generateReminder(context: {
   }
 }
 
-// 判断是否需要走代理（HTTPS 页面访问 HTTP API 时需要）
+// 判断是否需要走代理（仅开发服务器支持，生产环境无代理）
 function needsProxy(endpoint: string): boolean {
+  if (!import.meta.env.DEV) return false
   if (typeof window === 'undefined') return false
   const pageIsHttps = window.location.protocol === 'https:'
   const apiIsHttp = endpoint.startsWith('http://')
