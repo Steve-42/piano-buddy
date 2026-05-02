@@ -1,11 +1,15 @@
-// 练习中页面：花园 UI —— 植物成长 + 音符飘落
+// 练习中视图 - B 版进度环 + 飘落音符 + 巨大中心植物
+// 结束态：渲染 EndPostcard 明信片
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import type { PracticeStatus } from '../hooks/usePractice'
 import type { DebugInfo } from '../services/audioDetector'
-import { getGrowthStage } from '../types'
 import { getSettings } from '../services/db'
 import { useWakeLock } from '../hooks/useWakeLock'
+import { PB, PRACTICE_BG, SERIF, plantStageForMinutes } from '../styles/tokens'
+import { Plant } from './plant/PlantSVG'
+import { FallingNotes } from './practice/FallingNotes'
+import { EndPostcard } from './EndPostcard'
 
 interface PracticeViewProps {
   status: PracticeStatus
@@ -18,19 +22,10 @@ interface PracticeViewProps {
   onReset: () => void
 }
 
-// 音符 emoji 候选
-const NOTE_EMOJIS = ['🎵', '🎶', '♪', '♫']
-
-interface FallingNote {
-  id: number
-  emoji: string
-  left: number // 百分比位置
-}
-
 function formatTime(seconds: number): string {
   const min = Math.floor(seconds / 60)
   const sec = seconds % 60
-  return `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`
+  return `${min}:${sec.toString().padStart(2, '0')}`
 }
 
 export function PracticeView({
@@ -43,60 +38,59 @@ export function PracticeView({
   onStop,
   onReset,
 }: PracticeViewProps) {
-  const [notes, setNotes] = useState<FallingNote[]>([])
-  const [backgroundImage, setBackgroundImage] = useState('')
+  const [dailyGoal, setDailyGoal] = useState(30)
   const [showDebug, setShowDebug] = useState(false)
-  const noteIdRef = useRef(0)
   const isPlaying = status === 'playing'
   const isPracticing = status === 'playing' || status === 'listening'
-  const activeMin = Math.round(activeDuration / 60)
-  const stage = getGrowthStage(activeMin)
+  const activeMin = activeDuration / 60
+  const stage = plantStageForMinutes(activeMin)
 
-  // 练习期间阻止屏幕自动锁定
   useWakeLock(isPracticing)
 
-  // 加载背景图片设置
   useEffect(() => {
-    getSettings().then((s) => setBackgroundImage(s.backgroundImage || ''))
+    getSettings().then((s) => setDailyGoal(s.dailyGoalMinutes))
   }, [])
 
-  // 生成音符的回调
-  const spawnNote = useCallback(() => {
-    const id = noteIdRef.current++
-    const emoji = NOTE_EMOJIS[Math.floor(Math.random() * NOTE_EMOJIS.length)]
-    const left = 10 + Math.random() * 80 // 10%-90% 水平位置
-
-    setNotes((prev) => [...prev, { id, emoji, left }])
-
-    // 动画结束后移除
-    setTimeout(() => {
-      setNotes((prev) => prev.filter((n) => n.id !== id))
-    }, 3500)
-  }, [])
-
-  // 弹奏时定期生成音符
-  useEffect(() => {
-    if (!isPlaying) return
-
-    // 立即生成一个
-    spawnNote()
-
-    const interval = setInterval(() => {
-      spawnNote()
-    }, 800) // 每 0.8 秒一个音符
-
-    return () => clearInterval(interval)
-  }, [isPlaying, spawnNote])
-
-  // 错误状态
+  // 错误态
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen px-6">
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-6 max-w-md text-center">
-          <p className="text-red-600 text-lg mb-4">{error}</p>
+      <div
+        className="screen-fade"
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '0 24px',
+          background: PRACTICE_BG,
+        }}
+      >
+        <div
+          style={{
+            background: 'rgba(255,255,255,0.7)',
+            border: '1px solid rgba(232, 128, 128, 0.4)',
+            borderRadius: 18,
+            padding: 24,
+            maxWidth: 360,
+            textAlign: 'center',
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          <p style={{ color: '#b25656', fontSize: 16, margin: '0 0 16px', lineHeight: 1.5 }}>{error}</p>
           <button
             onClick={onReset}
-            className="px-6 py-2 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-lg transition-colors"
+            style={{
+              padding: '10px 22px',
+              borderRadius: 12,
+              border: `1px solid ${PB.emeraldDark}`,
+              background: `linear-gradient(180deg, #fffaee, ${PB.creamWarm})`,
+              color: PB.emeraldDeep,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              letterSpacing: '0.04em',
+            }}
           >
             返回
           </button>
@@ -105,150 +99,248 @@ export function PracticeView({
     )
   }
 
-  // 练习结束
+  // 结束态 → 明信片
   if (status === 'finished') {
     return (
-      <div
-        className="garden-bg flex flex-col items-center justify-center min-h-screen px-6"
-        style={backgroundImage ? { backgroundImage: `url(${backgroundImage})` } : {}}
-      >
-        {/* 最终植物状态 */}
-        <div className="mb-6">
-          <span
-            className="plant-emoji inline-block"
-            style={{ transform: `scale(${stage.scale})`, fontSize: '4rem' }}
-          >
-            {stage.emoji}
-          </span>
-        </div>
-
-        {/* 练习数据 */}
-        <div className="text-center mb-6">
-          <p className="text-stone-400 text-sm mb-1">今日练习</p>
-          <p className="text-4xl font-bold text-stone-700 mb-1">
-            {formatTime(activeDuration)}
-          </p>
-          <p className="text-stone-400 text-sm">实际弹奏 {activeMin} 分钟</p>
-        </div>
-
-        {/* AI 鼓励 */}
-        {aiMessage && (
-          <div className="w-full max-w-md bg-white/60 backdrop-blur-sm rounded-2xl p-5 mb-6 border border-stone-200/60">
-            <p className="text-stone-700 text-lg leading-relaxed">{aiMessage}</p>
-          </div>
-        )}
-
-        <button
-          onClick={onReset}
-          className="px-8 py-3 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl text-lg transition-colors"
-        >
-          返回首页
-        </button>
-      </div>
+      <EndPostcard
+        minutes={Math.max(1, Math.round(activeDuration / 60))}
+        goal={dailyGoal}
+        aiMessage={aiMessage}
+        onClose={onReset}
+      />
     )
   }
 
-  // 练习中
+  const progress = Math.min(1, activeMin / dailyGoal)
+  const R = 124
+  const Cm = 2 * Math.PI * R
+
   return (
-    <>
-      {/* 飘落的音符（在 garden-bg 外部，避免 CSS 层级冲突） */}
-      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', overflow: 'hidden', zIndex: 10 }}>
-        {notes.map((note) => (
-          <span
-            key={note.id}
-            className="falling-note"
-            style={{ left: `${note.left}%` }}
-          >
-            {note.emoji}
-          </span>
-        ))}
-      </div>
+    <div
+      className="screen-fade"
+      style={{
+        minHeight: '100vh',
+        position: 'relative',
+        overflow: 'hidden',
+        background: PRACTICE_BG,
+        fontFamily: 'inherit',
+        color: PB.ink,
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      <FallingNotes density={isPlaying ? 'medium' : 'sparse'} />
+
+      {/* 顶部：退出 + 麦克风指示 */}
       <div
-        className="garden-bg flex flex-col items-center justify-center min-h-screen px-6 overflow-hidden"
-        style={backgroundImage ? { backgroundImage: `url(${backgroundImage})` } : {}}
+        style={{
+          position: 'relative',
+          zIndex: 3,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '20px 22px 0',
+        }}
       >
-
-      {/* 状态指示灯 */}
-      <div
-        className={`w-3 h-3 rounded-full mb-4 transition-colors duration-500 ${
-          isPlaying
-            ? 'bg-emerald-400 shadow-lg shadow-emerald-400/50'
-            : 'bg-stone-300'
-        }`}
-      />
-
-      {/* 植物 */}
-      <div className="my-8">
-        <span
-          className="plant-emoji inline-block"
-          style={{ transform: `scale(${stage.scale})`, fontSize: '4rem' }}
+        <button
+          onClick={onStop}
+          aria-label="结束"
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 99,
+            border: '1px solid rgba(120,100,70,0.10)',
+            background: 'rgba(255,255,255,0.5)',
+            color: PB.inkSoft,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+          }}
         >
-          {stage.emoji}
-        </span>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <path d="M6 6 L18 18 M6 18 L18 6" />
+          </svg>
+        </button>
+
+        <MicIndicator listening={isPracticing} active={isPlaying} />
       </div>
 
-      {/* 计时器 */}
-      <div className="text-center mb-2">
-        <p className="text-3xl font-mono font-bold text-stone-600 tracking-wider">
-          {formatTime(activeDuration)}
-        </p>
-      </div>
-      <div className="text-center mb-8">
-        <p className="text-sm font-mono text-stone-300">
-          {formatTime(totalDuration)}
-        </p>
-      </div>
-
-      {/* 停止按钮 */}
-      <button
-        onClick={onStop}
-        className="w-20 h-20 rounded-full bg-white/60 hover:bg-white/80
-                   text-stone-500 text-base font-medium
-                   border border-stone-200/60
-                   transition-all duration-300 active:scale-95
-                   flex items-center justify-center
-                   backdrop-blur-sm"
+      {/* 中央：进度环 + 植物 */}
+      <div
+        style={{
+          flex: 1,
+          position: 'relative',
+          zIndex: 2,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '0 24px',
+        }}
       >
-        结束
-      </button>
-
-      {/* 调试面板开关 */}
-      {debug && (
-        <div className="w-full max-w-md mt-6">
-          <button
-            onClick={() => setShowDebug((prev) => !prev)}
-            className="text-xs text-stone-300 hover:text-stone-500 transition-colors"
+        <div style={{ position: 'relative', width: 280, height: 280 }}>
+          <svg
+            width="280"
+            height="280"
+            style={{ position: 'absolute', inset: 0, transform: 'rotate(-90deg)' }}
           >
-            {showDebug ? '隐藏调试' : '调试信息'}
-          </button>
-          {showDebug && (
-            <div className="mt-2 bg-white/40 backdrop-blur-sm rounded-xl p-3 border border-stone-200/60 font-mono text-xs">
-              <p className="text-stone-400 mb-2">
-                {debug.modelLoaded ? '每 4 秒更新' : debug.topClass || '加载模型中...'}
-              </p>
-              {debug.modelLoaded && (
-                <div className="grid grid-cols-2 gap-y-1 gap-x-4">
-                  <span className="text-stone-400">麦克风</span>
-                  <span className={debug.audioLevel > 0.01 ? 'text-emerald-500' : 'text-red-400'}>
-                    {debug.audioLevel.toFixed(3)}
-                  </span>
-                  <span className="text-stone-400">识别</span>
-                  <span className="text-stone-600">{debug.topClass}</span>
-                  <span className="text-stone-400">钢琴</span>
-                  <span className={debug.isPiano ? 'text-emerald-500' : 'text-stone-400'}>
-                    {(debug.pianoScore * 100).toFixed(1)}%
-                  </span>
-                  <span className="text-stone-400">判定</span>
-                  <span className={debug.result === 'PIANO' ? 'text-emerald-500 font-bold' : 'text-stone-400'}>
-                    {debug.result === 'PIANO' ? '琴声' : '—'}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
+            <circle cx="140" cy="140" r={R} fill="none" stroke="rgba(120,100,70,0.10)" strokeWidth="2.5" />
+            <circle
+              cx="140"
+              cy="140"
+              r={R}
+              fill="none"
+              stroke={PB.emerald}
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeDasharray={Cm}
+              strokeDashoffset={Cm * (1 - progress)}
+              style={{
+                transition: 'stroke-dashoffset 1s linear',
+                filter: 'drop-shadow(0 0 8px rgba(16,185,129,0.4))',
+              }}
+            />
+          </svg>
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Plant
+              stage={stage === 'empty' ? 'sprout' : stage}
+              size={200}
+              animated
+              glow={stage === 'bloom'}
+            />
+          </div>
         </div>
-      )}
+      </div>
+
+      {/* 底部：计时 + 目标 */}
+      <div
+        style={{
+          position: 'relative',
+          zIndex: 3,
+          padding: '0 22px 36px',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 8,
+        }}
+      >
+        <div style={{ textAlign: 'center' }}>
+          <div
+            style={{
+              fontFamily: SERIF,
+              fontSize: 24,
+              fontWeight: 400,
+              color: PB.ink,
+              fontVariantNumeric: 'tabular-nums',
+              lineHeight: 1,
+            }}
+          >
+            {formatTime(activeDuration)}
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              color: PB.inkDim,
+              letterSpacing: '0.06em',
+              marginTop: 6,
+            }}
+          >
+            目标 {dailyGoal} 分钟 · 总用时 {formatTime(totalDuration)}
+          </div>
+        </div>
+
+        {debug && (
+          <div style={{ width: '100%', maxWidth: 360 }}>
+            <button
+              onClick={() => setShowDebug((prev) => !prev)}
+              style={{
+                background: 'none',
+                border: 'none',
+                fontSize: 11,
+                color: PB.inkDim,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                letterSpacing: '0.04em',
+                padding: 4,
+              }}
+            >
+              {showDebug ? '隐藏调试' : '调试信息'}
+            </button>
+            {showDebug && (
+              <div
+                style={{
+                  marginTop: 6,
+                  background: 'rgba(255,255,255,0.5)',
+                  border: '1px solid rgba(120,100,70,0.08)',
+                  borderRadius: 12,
+                  padding: 10,
+                  fontFamily: 'monospace',
+                  fontSize: 11,
+                  color: PB.inkSoft,
+                  backdropFilter: 'blur(8px)',
+                }}
+              >
+                <p style={{ margin: '0 0 6px', color: PB.inkDim }}>
+                  {debug.modelLoaded ? '每 4 秒更新' : debug.topClass || '加载模型中...'}
+                </p>
+                {debug.modelLoaded && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 12, rowGap: 3 }}>
+                    <span style={{ color: PB.inkDim }}>麦克风</span>
+                    <span style={{ color: debug.audioLevel > 0.01 ? PB.emerald : '#b25656' }}>
+                      {debug.audioLevel.toFixed(3)}
+                    </span>
+                    <span style={{ color: PB.inkDim }}>识别</span>
+                    <span>{debug.topClass}</span>
+                    <span style={{ color: PB.inkDim }}>钢琴</span>
+                    <span style={{ color: debug.isPiano ? PB.emerald : PB.inkDim }}>
+                      {(debug.pianoScore * 100).toFixed(1)}%
+                    </span>
+                    <span style={{ color: PB.inkDim }}>判定</span>
+                    <span style={{ color: debug.result === 'PIANO' ? PB.emerald : PB.inkDim, fontWeight: debug.result === 'PIANO' ? 700 : 400 }}>
+                      {debug.result === 'PIANO' ? '琴声' : '—'}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
-    </>
+  )
+}
+
+interface MicIndicatorProps {
+  listening: boolean
+  active: boolean
+}
+
+function MicIndicator({ listening, active }: MicIndicatorProps) {
+  if (!listening) {
+    return <span style={{ width: 14 }} />
+  }
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      <svg width="14" height="14" viewBox="0 0 14 14">
+        <circle cx="7" cy="7" r="3" fill={PB.emerald} opacity={active ? 0.95 : 0.5} />
+        <circle cx="7" cy="7" r="6" fill="none" stroke={PB.emerald} strokeWidth="0.8" opacity="0.4">
+          <animate attributeName="r" from="3.5" to="6.5" dur="1.6s" repeatCount="indefinite" />
+          <animate attributeName="opacity" from="0.5" to="0" dur="1.6s" repeatCount="indefinite" />
+        </circle>
+      </svg>
+      <span style={{ fontSize: 11, color: PB.inkDim, letterSpacing: '0.05em' }}>
+        {active ? '正在听到琴声' : '正在听'}
+      </span>
+    </div>
   )
 }

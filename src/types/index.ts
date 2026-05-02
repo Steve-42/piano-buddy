@@ -34,25 +34,5 @@ export const DEFAULT_SETTINGS: UserSettings = {
   backgroundImage: '',
 }
 
-// 植物成长阶段定义
-export interface GrowthStage {
-  minMinutes: number
-  emoji: string
-  label: string
-  scale: number
-}
-
-export const GROWTH_STAGES: readonly GrowthStage[] = [
-  { minMinutes: 0, emoji: '🌰', label: '种子', scale: 1.0 },
-  { minMinutes: 5, emoji: '🌱', label: '发芽', scale: 1.5 },
-  { minMinutes: 15, emoji: '🌿', label: '成长', scale: 2.0 },
-  { minMinutes: 30, emoji: '🌸', label: '开花', scale: 3.0 },
-]
-
-export function getGrowthStage(activeMinutes: number): GrowthStage {
-  let stage = GROWTH_STAGES[0]
-  for (const s of GROWTH_STAGES) {
-    if (activeMinutes >= s.minMinutes) stage = s
-  }
-  return stage
-}
+// 注：植物档位逻辑已移到 styles/tokens.ts (plantStageForMinutes / PlantStage)
+// 旧的 emoji-based GROWTH_STAGES 在 Claude Design 改版后删除

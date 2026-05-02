@@ -1,4 +1,5 @@
-// 首页：展示今日状态、植物、AI 消息、开始练琴按钮
+// 首页 v2 - cream + emerald, garden 主卡, 拟物 CTA, 回归态温柔卡片
+// 设计来自 Claude Design 交接稿
 
 import { useEffect, useState } from 'react'
 import {
@@ -6,177 +7,463 @@ import {
   getStreakInfo,
   getRecentSessions,
   getSettings,
+  getDailyActiveMinutes,
 } from '../services/db'
 import { generateReminder } from '../services/llmService'
 import type { PracticeSession } from '../types'
-import { getGrowthStage } from '../types'
+import { PB, PAGE_BG, SERIF, plantStageForMinutes } from '../styles/tokens'
+import { Plant, PlantSprout } from './plant/PlantSVG'
+import { Garden } from './plant/Garden'
 
 interface HomePageProps {
   onStartPractice: () => void
   onNavigate: (page: 'history' | 'settings') => void
 }
 
-// 距上次练习多少天起，触发"回归态"温柔提醒
 const RETURNING_THRESHOLD_DAYS = 3
 
+interface HomeData {
+  todaySessions: PracticeSession[]
+  sessionsByDay: readonly number[]
+  streakDays: number
+  streakIsSoft: boolean
+  daysSinceLastPractice: number
+  reminder: string
+  dailyGoal: number
+  loading: boolean
+}
+
+const INITIAL: HomeData = {
+  todaySessions: [],
+  sessionsByDay: [],
+  streakDays: 0,
+  streakIsSoft: false,
+  daysSinceLastPractice: 0,
+  reminder: '',
+  dailyGoal: 30,
+  loading: true,
+}
+
 export function HomePage({ onStartPractice, onNavigate }: HomePageProps) {
-  const [todaySessions, setTodaySessions] = useState<PracticeSession[]>([])
-  const [streak, setStreak] = useState(0)
-  const [streakIsSoft, setStreakIsSoft] = useState(false)
-  const [daysSinceLastPractice, setDaysSinceLastPractice] = useState(0)
-  const [reminder, setReminder] = useState('')
-  const [dailyGoal, setDailyGoal] = useState(30)
-  const [backgroundImage, setBackgroundImage] = useState('')
+  const [data, setData] = useState<HomeData>(INITIAL)
 
   useEffect(() => {
-    loadData()
+    let alive = true
+    ;(async () => {
+      const today = new Date().toISOString().slice(0, 10)
+      const [sessions, streakInfo, settings, sessionsByDay, recent] = await Promise.all([
+        getSessionsByDate(today),
+        getStreakInfo(),
+        getSettings(),
+        getDailyActiveMinutes(30),
+        getRecentSessions(7),
+      ])
+      const effectiveDaysSince = sessions.length > 0 ? 0 : streakInfo.daysSinceLastPractice
+      const previousSessions = recent.filter((s) => s.date !== today)
+      const lastSession = previousSessions[0]
+
+      const reminder = await generateReminder({
+        streak: streakInfo.days,
+        daysSinceLastPractice: effectiveDaysSince,
+        lastSessionDuration: lastSession?.activeDuration ?? null,
+      })
+
+      if (!alive) return
+      setData({
+        todaySessions: sessions,
+        sessionsByDay,
+        streakDays: streakInfo.days,
+        streakIsSoft: streakInfo.isSoft,
+        daysSinceLastPractice: effectiveDaysSince,
+        reminder,
+        dailyGoal: settings.dailyGoalMinutes,
+        loading: false,
+      })
+    })()
+    return () => {
+      alive = false
+    }
   }, [])
 
-  async function loadData() {
-    const today = new Date().toISOString().slice(0, 10)
-    const sessions = await getSessionsByDate(today)
-    setTodaySessions(sessions)
-
-    const streakInfo = await getStreakInfo()
-    setStreak(streakInfo.days)
-    setStreakIsSoft(streakInfo.isSoft)
-    // 今天已练 → 距上次为 0；否则用 streakInfo 算出的天数
-    const effectiveDaysSince =
-      sessions.length > 0 ? 0 : streakInfo.daysSinceLastPractice
-    setDaysSinceLastPractice(effectiveDaysSince)
-
-    const settings = await getSettings()
-    setDailyGoal(settings.dailyGoalMinutes)
-    setBackgroundImage(settings.backgroundImage || '')
-
-    // 获取提醒消息（最近一次练习时长用于上下文）
-    const recent = await getRecentSessions(7)
-    const previousSessions = recent.filter((s) => s.date !== today)
-    const lastSession = previousSessions[0]
-    const msg = await generateReminder({
-      streak: streakInfo.days,
-      daysSinceLastPractice: effectiveDaysSince,
-      lastSessionDuration: lastSession?.activeDuration ?? null,
-    })
-    setReminder(msg)
-  }
-
-  const isReturning =
-    daysSinceLastPractice >= RETURNING_THRESHOLD_DAYS && todaySessions.length === 0
-
-  // 今日已练总时长
-  const todayActiveMinutes = Math.round(
-    todaySessions.reduce((sum, s) => sum + s.activeDuration, 0) / 60,
+  const todayMin = Math.round(
+    data.todaySessions.reduce((sum, s) => sum + s.activeDuration, 0) / 60,
   )
-  const goalProgress = Math.min(100, (todayActiveMinutes / dailyGoal) * 100)
-  const stage = getGrowthStage(todayActiveMinutes)
+  const isReturning =
+    data.daysSinceLastPractice >= RETURNING_THRESHOLD_DAYS && data.todaySessions.length === 0
+  const todayStage = plantStageForMinutes(todayMin)
+  const gardenMode = isReturning ? 'sinceLast' : 'recent'
+
+  // 回归态：CTA 文案改为更轻盈的"摸一摸琴"
+  const ctaLabel = isReturning ? '摸一摸琴' : '打开琴盖'
 
   return (
     <div
-      className="garden-bg flex flex-col items-center min-h-screen px-6 py-8"
-      style={backgroundImage ? { backgroundImage: `url(${backgroundImage})` } : {}}
+      className="screen-fade"
+      style={{
+        minHeight: '100vh',
+        padding: '20px 22px 0',
+        display: 'flex',
+        flexDirection: 'column',
+        fontFamily: 'inherit',
+        color: PB.ink,
+        background: PAGE_BG,
+        boxSizing: 'border-box',
+      }}
     >
       {/* 顶部导航 */}
-      <div className="w-full max-w-md flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-bold text-stone-700">Piano Buddy</h1>
-        <div className="flex gap-3">
-          <button
-            onClick={() => onNavigate('history')}
-            className="text-stone-400 hover:text-stone-600 transition-colors"
-          >
-            历史
-          </button>
-          <button
-            onClick={() => onNavigate('settings')}
-            className="text-stone-400 hover:text-stone-600 transition-colors"
-          >
-            设置
-          </button>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '4px 0 0',
+          marginBottom: 18,
+        }}
+      >
+        <div
+          style={{
+            fontFamily: SERIF,
+            fontSize: 19,
+            fontWeight: 500,
+            color: PB.ink,
+            letterSpacing: '-0.01em',
+          }}
+        >
+          Piano Buddy
+        </div>
+        <div style={{ display: 'flex', gap: 18 }}>
+          <NavBtn label="历史" onClick={() => onNavigate('history')} />
+          <NavBtn label="设置" onClick={() => onNavigate('settings')} />
         </div>
       </div>
 
-      {/* 连续天数 */}
-      {streak > 0 && (
-        <div className="mb-6 text-center">
-          <span className="text-4xl font-bold text-emerald-600">{streak}</span>
-          <p className="text-stone-400 text-sm mt-1">
-            连续练习天数
-            {streakIsSoft && (
-              <span
-                className="ml-1 text-emerald-500/70"
-                title="允许中断 1 天的「软续」，不打破节奏"
-              >
-                · 灵活续
-              </span>
-            )}
-          </p>
-        </div>
+      {/* 回归卡片：≥3 天没练时显示，替代普通 AI 提醒 */}
+      {isReturning && (
+        <ComebackCard daysAway={data.daysSinceLastPractice} />
       )}
 
-      {/* AI 提醒消息（断练 ≥3 天时使用更温暖的"回归"样式） */}
-      {reminder && (
+      {/* 花园主卡 */}
+      <div
+        style={{
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.7), rgba(255,255,255,0.4))',
+          border: '1px solid rgba(120,100,70,0.08)',
+          borderRadius: 22,
+          padding: '20px 18px 22px',
+          marginBottom: 18,
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)',
+          boxShadow: '0 6px 24px -12px rgba(120,100,70,0.18)',
+        }}
+      >
         <div
-          className={`w-full max-w-md backdrop-blur-sm rounded-2xl p-5 mb-6 border ${
-            isReturning
-              ? 'bg-emerald-50/80 border-emerald-200/70'
-              : 'bg-white/60 border-stone-200/60'
-          }`}
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'baseline',
+            marginBottom: 14,
+          }}
         >
-          {isReturning && (
-            <p className="text-xs text-emerald-600/70 mb-2">欢迎回到琴前</p>
-          )}
-          <p
-            className={`text-lg leading-relaxed ${
-              isReturning ? 'text-emerald-900' : 'text-stone-700'
-            }`}
-          >
-            {reminder}
-          </p>
-        </div>
-      )}
-
-      {/* 今日植物状态 + 进度 */}
-      <div className="w-full max-w-md mb-6">
-        <div className="flex items-center gap-3 mb-2">
-          <span className="text-2xl">{stage.emoji}</span>
-          <div className="flex-1">
-            <div className="flex justify-between text-sm text-stone-400 mb-1">
-              <span>今日练习</span>
-              <span>{todayActiveMinutes} / {dailyGoal} 分钟</span>
+          <div>
+            <div
+              style={{
+                fontFamily: SERIF,
+                fontSize: 26,
+                fontWeight: 400,
+                color: PB.ink,
+                letterSpacing: '-0.02em',
+                lineHeight: 1,
+              }}
+            >
+              你的花园
             </div>
-            <div className="w-full h-3 bg-stone-200/60 rounded-full overflow-hidden">
+            <div style={{ fontSize: 12, color: PB.inkDim, marginTop: 4, letterSpacing: '0.04em' }}>
+              {gardenMode === 'sinceLast' ? '从上次起' : '过去 30 天'}
+            </div>
+          </div>
+          <StreakBadge days={data.streakDays} isSoft={data.streakIsSoft} />
+        </div>
+
+        {/* 今日条 */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            padding: '12px 14px',
+            marginBottom: 16,
+            background: 'rgba(16,185,129,0.05)',
+            border: '1px solid rgba(16,185,129,0.15)',
+            borderRadius: 14,
+          }}
+        >
+          <div style={{ width: 56, height: 56, flexShrink: 0 }}>
+            <Plant stage={todayStage} size={56} animated />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 11,
+                color: PB.inkDim,
+                letterSpacing: '0.06em',
+                marginBottom: 2,
+              }}
+            >
+              今天
+            </div>
+            <div
+              style={{
+                fontSize: 22,
+                color: PB.ink,
+                fontFamily: SERIF,
+                lineHeight: 1,
+                marginBottom: 6,
+              }}
+            >
+              {todayMin}{' '}
+              <span style={{ fontSize: 13, color: PB.inkDim, fontFamily: 'inherit' }}>
+                / {data.dailyGoal} 分钟
+              </span>
+            </div>
+            <div
+              style={{
+                height: 4,
+                background: 'rgba(120,100,70,0.08)',
+                borderRadius: 99,
+              }}
+            >
               <div
-                className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-500"
-                style={{ width: `${goalProgress}%` }}
+                style={{
+                  height: '100%',
+                  width: `${Math.min(100, (todayMin / data.dailyGoal) * 100)}%`,
+                  background: PB.emerald,
+                  borderRadius: 99,
+                  transition: 'width 500ms ease',
+                }}
               />
             </div>
           </div>
         </div>
+
+        {!data.loading && data.sessionsByDay.length > 0 && (
+          <Garden sessionsByDay={data.sessionsByDay} mode={gardenMode} />
+        )}
       </div>
 
-      {/* 开始练琴按钮 */}
-      <button
-        onClick={onStartPractice}
-        className="w-40 h-40 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-400
-                   hover:from-emerald-400 hover:to-emerald-300
-                   text-white text-xl font-semibold
-                   shadow-lg shadow-emerald-500/25 hover:shadow-emerald-400/30
-                   transition-all duration-300 active:scale-95
-                   flex items-center justify-center
-                   border border-emerald-400/30"
-      >
-        开始练琴
-      </button>
+      {!isReturning && data.reminder && <AIWhisper text={data.reminder} />}
 
-      {/* 最近一次练习的 AI 消息 */}
-      {todaySessions.length > 0 && todaySessions[todaySessions.length - 1].aiMessage && (
-        <div className="w-full max-w-md mt-8 bg-white/60 backdrop-blur-sm rounded-2xl p-5 border border-emerald-200/60">
-          <p className="text-sm text-emerald-600/60 mb-1">上次练习后的鼓励</p>
-          <p className="text-stone-700">
-            {todaySessions[todaySessions.length - 1].aiMessage}
-          </p>
-        </div>
+      <div style={{ flex: 1 }} />
+
+      <div style={{ display: 'flex', justifyContent: 'center', paddingBottom: 32 }}>
+        <TactileCTA
+          label={ctaLabel}
+          glow={isReturning}
+          onPress={onStartPractice}
+        />
+      </div>
+    </div>
+  )
+}
+
+function NavBtn({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: 'none',
+        border: 'none',
+        color: PB.inkDim,
+        fontSize: 13,
+        fontFamily: 'inherit',
+        padding: 0,
+        cursor: 'pointer',
+        letterSpacing: '0.02em',
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+
+interface StreakBadgeProps {
+  days: number
+  isSoft: boolean
+}
+
+function StreakBadge({ days, isSoft }: StreakBadgeProps) {
+  if (days <= 0) {
+    return (
+      <span style={{ fontSize: 12, color: PB.inkDim, letterSpacing: '0.04em' }}>新的开始</span>
+    )
+  }
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      <span style={{ fontSize: 12, color: PB.inkDim, letterSpacing: '0.04em' }}>连续</span>
+      <span
+        style={{
+          fontSize: 22,
+          color: PB.ink,
+          fontWeight: 500,
+          fontFamily: SERIF,
+        }}
+      >
+        {days}
+      </span>
+      <span style={{ fontSize: 12, color: PB.inkDim }}>天</span>
+      {isSoft && (
+        <span
+          title="允许中断 1 天的「软续」，不打破节奏"
+          style={{
+            marginLeft: 1,
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            border: `1.5px dashed ${PB.emerald}`,
+            display: 'inline-block',
+          }}
+        />
       )}
     </div>
+  )
+}
+
+interface ComebackCardProps {
+  daysAway: number
+}
+
+function ComebackCard({ daysAway }: ComebackCardProps) {
+  return (
+    <div
+      style={{
+        background: `linear-gradient(180deg, ${PB.creamWarm}, ${PB.cream})`,
+        border: `1px solid ${PB.emeraldSoft}`,
+        borderRadius: 20,
+        padding: '20px 20px 22px',
+        marginBottom: 18,
+        position: 'relative',
+        overflow: 'hidden',
+        boxShadow: '0 4px 14px -6px rgba(120,100,70,0.12)',
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          top: -16,
+          right: -10,
+          width: 110,
+          height: 110,
+          opacity: 0.5,
+          background: `radial-gradient(circle at 50% 50%, ${PB.emeraldSoft} 0%, transparent 70%)`,
+        }}
+      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, position: 'relative' }}>
+        <div
+          style={{
+            width: 64,
+            height: 64,
+            flexShrink: 0,
+            animation: 'seed-resprout 3.2s ease-in-out infinite',
+          }}
+        >
+          <PlantSprout size={64} animated />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div
+            style={{
+              fontFamily: SERIF,
+              fontSize: 24,
+              fontWeight: 400,
+              color: PB.ink,
+              letterSpacing: '-0.01em',
+              lineHeight: 1.1,
+              marginBottom: 6,
+            }}
+          >
+            你回来了。
+          </div>
+          <div style={{ fontSize: 13, color: PB.inkSoft, lineHeight: 1.55 }}>
+            上次是 {daysAway} 天前。种子还在，
+            <br />
+            等你把它叫醒。
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AIWhisper({ text }: { text: string }) {
+  return (
+    <div
+      style={{
+        fontSize: 13,
+        color: PB.inkSoft,
+        lineHeight: 1.6,
+        textAlign: 'center',
+        padding: '0 12px',
+        marginBottom: 14,
+        fontStyle: 'italic',
+        fontFamily: SERIF,
+        letterSpacing: '0.01em',
+      }}
+    >
+      {text}
+    </div>
+  )
+}
+
+interface TactileCTAProps {
+  label: string
+  glow?: boolean
+  onPress: () => void
+}
+
+function TactileCTA({ label, glow = false, onPress }: TactileCTAProps) {
+  const [pressed, setPressed] = useState(false)
+  const charCount = label.length
+  const fontSize = charCount <= 4 ? 22 : charCount <= 5 ? 19 : charCount <= 6 ? 17 : 15
+  const size = 156
+
+  return (
+    <button
+      onClick={onPress}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      onMouseLeave={() => setPressed(false)}
+      onTouchStart={() => setPressed(true)}
+      onTouchEnd={() => setPressed(false)}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        border: `1.5px solid ${PB.emeraldDark}`,
+        background: pressed
+          ? `radial-gradient(circle at 50% 60%, ${PB.creamDeep} 0%, ${PB.creamWarm} 100%)`
+          : `radial-gradient(circle at 50% 35%, #fffaee 0%, ${PB.creamWarm} 80%)`,
+        boxShadow: pressed
+          ? `inset 0 6px 14px rgba(5, 102, 105, 0.22), inset 0 -2px 4px rgba(255,255,255,0.4), 0 1px 2px rgba(61,52,40,0.06)`
+          : `inset 0 1.5px 3px rgba(255, 255, 255, 0.9), inset 0 -3px 6px rgba(120, 90, 50, 0.12), 0 12px 32px -10px rgba(5, 102, 105, 0.28), 0 2px 6px rgba(61,52,40,0.06)${
+              glow
+                ? `, 0 0 0 8px rgba(16,185,129,0.06), 0 0 0 16px rgba(16,185,129,0.03)`
+                : ''
+            }`,
+        color: PB.emeraldDeep,
+        fontSize,
+        fontWeight: 600,
+        fontFamily: 'inherit',
+        letterSpacing: '0.04em',
+        cursor: 'pointer',
+        transition: 'box-shadow 120ms ease, transform 120ms ease',
+        transform: pressed ? 'translateY(1px)' : 'translateY(0)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 2,
+        padding: 0,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span>{label}</span>
+    </button>
   )
 }
