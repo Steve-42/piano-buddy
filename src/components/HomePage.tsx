@@ -1,7 +1,12 @@
 // 首页：展示今日状态、植物、AI 消息、开始练琴按钮
 
 import { useEffect, useState } from 'react'
-import { getSessionsByDate, getStreak, getRecentSessions, getSettings } from '../services/db'
+import {
+  getSessionsByDate,
+  getStreakInfo,
+  getRecentSessions,
+  getSettings,
+} from '../services/db'
 import { generateReminder } from '../services/llmService'
 import type { PracticeSession } from '../types'
 import { getGrowthStage } from '../types'
@@ -11,9 +16,14 @@ interface HomePageProps {
   onNavigate: (page: 'history' | 'settings') => void
 }
 
+// 距上次练习多少天起，触发"回归态"温柔提醒
+const RETURNING_THRESHOLD_DAYS = 3
+
 export function HomePage({ onStartPractice, onNavigate }: HomePageProps) {
   const [todaySessions, setTodaySessions] = useState<PracticeSession[]>([])
   const [streak, setStreak] = useState(0)
+  const [streakIsSoft, setStreakIsSoft] = useState(false)
+  const [daysSinceLastPractice, setDaysSinceLastPractice] = useState(0)
   const [reminder, setReminder] = useState('')
   const [dailyGoal, setDailyGoal] = useState(30)
   const [backgroundImage, setBackgroundImage] = useState('')
@@ -27,32 +37,32 @@ export function HomePage({ onStartPractice, onNavigate }: HomePageProps) {
     const sessions = await getSessionsByDate(today)
     setTodaySessions(sessions)
 
-    const currentStreak = await getStreak()
-    setStreak(currentStreak)
+    const streakInfo = await getStreakInfo()
+    setStreak(streakInfo.days)
+    setStreakIsSoft(streakInfo.isSoft)
+    // 今天已练 → 距上次为 0；否则用 streakInfo 算出的天数
+    const effectiveDaysSince =
+      sessions.length > 0 ? 0 : streakInfo.daysSinceLastPractice
+    setDaysSinceLastPractice(effectiveDaysSince)
 
     const settings = await getSettings()
     setDailyGoal(settings.dailyGoalMinutes)
     setBackgroundImage(settings.backgroundImage || '')
 
-    // 获取提醒消息
+    // 获取提醒消息（最近一次练习时长用于上下文）
     const recent = await getRecentSessions(7)
     const previousSessions = recent.filter((s) => s.date !== today)
-    const daysSinceLastPractice =
-      previousSessions.length > 0
-        ? Math.floor(
-            (Date.now() - Math.max(...previousSessions.map((s) => s.startTime))) /
-              (1000 * 60 * 60 * 24),
-          )
-        : 999
-
     const lastSession = previousSessions[0]
     const msg = await generateReminder({
-      streak: currentStreak,
-      daysSinceLastPractice: sessions.length > 0 ? 0 : daysSinceLastPractice,
+      streak: streakInfo.days,
+      daysSinceLastPractice: effectiveDaysSince,
       lastSessionDuration: lastSession?.activeDuration ?? null,
     })
     setReminder(msg)
   }
+
+  const isReturning =
+    daysSinceLastPractice >= RETURNING_THRESHOLD_DAYS && todaySessions.length === 0
 
   // 今日已练总时长
   const todayActiveMinutes = Math.round(
@@ -89,14 +99,39 @@ export function HomePage({ onStartPractice, onNavigate }: HomePageProps) {
       {streak > 0 && (
         <div className="mb-6 text-center">
           <span className="text-4xl font-bold text-emerald-600">{streak}</span>
-          <p className="text-stone-400 text-sm mt-1">连续练习天数</p>
+          <p className="text-stone-400 text-sm mt-1">
+            连续练习天数
+            {streakIsSoft && (
+              <span
+                className="ml-1 text-emerald-500/70"
+                title="允许中断 1 天的「软续」，不打破节奏"
+              >
+                · 灵活续
+              </span>
+            )}
+          </p>
         </div>
       )}
 
-      {/* AI 提醒消息 */}
+      {/* AI 提醒消息（断练 ≥3 天时使用更温暖的"回归"样式） */}
       {reminder && (
-        <div className="w-full max-w-md bg-white/60 backdrop-blur-sm rounded-2xl p-5 mb-6 border border-stone-200/60">
-          <p className="text-stone-700 text-lg leading-relaxed">{reminder}</p>
+        <div
+          className={`w-full max-w-md backdrop-blur-sm rounded-2xl p-5 mb-6 border ${
+            isReturning
+              ? 'bg-emerald-50/80 border-emerald-200/70'
+              : 'bg-white/60 border-stone-200/60'
+          }`}
+        >
+          {isReturning && (
+            <p className="text-xs text-emerald-600/70 mb-2">欢迎回到琴前</p>
+          )}
+          <p
+            className={`text-lg leading-relaxed ${
+              isReturning ? 'text-emerald-900' : 'text-stone-700'
+            }`}
+          >
+            {reminder}
+          </p>
         </div>
       )}
 

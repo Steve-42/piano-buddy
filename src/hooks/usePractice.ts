@@ -6,7 +6,7 @@ import {
   createSession,
   updateSession,
   getSettings,
-  getStreak,
+  getStreakInfo,
   getRecentSessions,
 } from '../services/db'
 import { generateEncouragement } from '../services/llmService'
@@ -178,19 +178,12 @@ export function usePractice() {
     // 生成 AI 鼓励消息
     try {
       const settings = await getSettings()
-      const streak = await getStreak()
+      const streakInfo = await getStreakInfo()
       const recent = await getRecentSessions(14) // 取 14 天用于计算本周/上周
 
-      // 计算距上次练习天数
+      // 距上次练习的天数：用 streakInfo 已计算的结果（按日期边界算，更稳定）
       const today = new Date().toISOString().slice(0, 10)
-      const previousSessions = recent.filter((s) => s.date !== today)
-      const daysSinceLastPractice =
-        previousSessions.length > 0
-          ? Math.floor(
-              (Date.now() - previousSessions[0].startTime) /
-                (1000 * 60 * 60 * 24),
-            )
-          : 999
+      const daysSinceLastPractice = streakInfo.daysSinceLastPractice
 
       // 计算练习时段
       const now = new Date()
@@ -227,11 +220,17 @@ export function usePractice() {
           .reduce((sum, s) => sum + s.activeDuration, 0) / 60,
       )
 
+      // streak: 如果今天本来没练过（即这次练习是新增今日记录），把当前练习也算进连续天数
+      const streakIncludingToday =
+        streakInfo.lastPracticeDate === today
+          ? streakInfo.days
+          : streakInfo.days + (activeDuration > 0 ? 1 : 0)
+
       const message = await generateEncouragement({
         activeDuration,
         totalDuration,
         dailyGoal: settings.dailyGoalMinutes,
-        streak: streak + (activeDuration > 0 ? 1 : 0),
+        streak: streakIncludingToday,
         daysSinceLastPractice,
         timeOfDay,
         weeklyTotalMin,

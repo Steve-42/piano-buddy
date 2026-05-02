@@ -72,14 +72,51 @@ export async function getAllSessions(): Promise<PracticeSession[]> {
   return db.sessions.orderBy('startTime').reverse().toArray()
 }
 
-// 计算连续练习天数
+// 计算连续练习天数（硬续：一断即清零）
 export async function getStreak(): Promise<number> {
+  const info = await getStreakInfo()
+  return info.days
+}
+
+export interface StreakInfo {
+  readonly days: number // 连续天数（含宽限日）
+  readonly isSoft: boolean // 是否使用了宽限日（软续）
+  readonly lastPracticeDate: string | null
+  readonly daysSinceLastPractice: number // 999 表示从未练过
+}
+
+// 软续允许的最大连续中断天数：1 天偶尔断，不清零
+const SOFT_STREAK_GRACE_DAYS = 1
+
+// 计算连续练习天数（软续：允许中断 1 天不清零）+ 完整的最近练习状态
+export async function getStreakInfo(): Promise<StreakInfo> {
   const sessions = await db.sessions.orderBy('date').reverse().toArray()
-  if (sessions.length === 0) return 0
+  if (sessions.length === 0) {
+    return {
+      days: 0,
+      isSoft: false,
+      lastPracticeDate: null,
+      daysSinceLastPractice: 999,
+    }
+  }
 
   const practicedDates = new Set(sessions.map((s) => s.date))
-  let streak = 0
+  const lastPracticeDate = sessions[0].date
+
   const today = new Date()
+  const todayStr = today.toISOString().slice(0, 10)
+  const lastDate = new Date(lastPracticeDate + 'T00:00:00')
+  const todayDateOnly = new Date(todayStr + 'T00:00:00')
+  const daysSinceLastPractice = Math.max(
+    0,
+    Math.round(
+      (todayDateOnly.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24),
+    ),
+  )
+
+  let streak = 0
+  let isSoft = false
+  let consecutiveMisses = 0
 
   for (let i = 0; i < 365; i++) {
     const checkDate = new Date(today)
@@ -88,15 +125,24 @@ export async function getStreak(): Promise<number> {
 
     if (practicedDates.has(dateStr)) {
       streak++
+      consecutiveMisses = 0
     } else if (i === 0) {
-      // 今天还没练，不算中断，继续往前查
+      // 今天还没练不算断，继续往前看
       continue
     } else {
-      break
+      consecutiveMisses++
+      if (consecutiveMisses > SOFT_STREAK_GRACE_DAYS) break
+      // 在宽限期内，标记软续后继续
+      isSoft = true
     }
   }
 
-  return streak
+  return {
+    days: streak,
+    isSoft,
+    lastPracticeDate,
+    daysSinceLastPractice,
+  }
 }
 
 export default db

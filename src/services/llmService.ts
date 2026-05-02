@@ -63,7 +63,14 @@ const ENCOURAGEMENT_SYSTEM_PROMPT = `你是 Piano Buddy，一个温暖、真诚�
 - 趋势：和最近几天对比，是否有变化
 - 目标：完成度、超额或差一点
 - 坚持：连续天数是一个里程碑
-- 回归：中断后重新开始很难得`
+- 回归：中断后重新开始很难得
+
+## 特殊情况：断练回归（"距上次" ≥ 3 天）
+这是用户中断后回到琴前的第一次，是最关键的时刻。规则：
+- 绝对不要提"中断了几天""终于回来了"这种凸显中断的话
+- 不强调今天弹了多少（数据可能很少，强调反而打击）
+- 重点是"你坐下来了"这个事实本身，用一句温柔的存在感肯定即可
+- 例："看到你了。今天 N 分钟，刚刚好。"`
 
 function buildEncouragementMessage(context: EncouragementContext): string {
   const activeMin = Math.round(context.activeDuration / 60)
@@ -121,7 +128,13 @@ export async function generateReminder(context: {
 - 像朋友的轻推，不是闹钟的催促
 - 如果用户已经连续练了很多天，要表达你注意到了
 - 如果用户中断了几天，要体谅而不是责备
-- 简短，1-2 句话`
+- 简短，1-2 句话
+
+## 断练回归的特殊规则（"距上次" ≥ 3 天）
+- 不要提具体中断了几天，不要让用户感受到"你又被记录了"
+- 不要承诺式的话："欢迎回来""期待你""一起加油"——太正式
+- 像很久没联系的朋友突然发的一条消息，轻、短、不带追问
+- 例：「最近忙吗？想到你了。」「今天天气不错，琴还好吗？」`
 
   const userMessage = `当前情况：
 - 连续练习：${context.streak} 天
@@ -219,8 +232,9 @@ function getDefaultReminder(context: {
       ? `已经连续 ${context.streak} 天了，今天继续？`
       : '新的一天，来弹弹琴吧？'
   }
-  if (context.daysSinceLastPractice <= 3) {
+  if (context.daysSinceLastPractice <= 2) {
     return '好几天没弹了，没关系，随时可以重新开始。'
   }
-  return '想你了。什么时候方便弹一会儿？'
+  // ≥ 3 天断练：温和、短、不追问
+  return '最近忙吗？想到你了。'
 }
