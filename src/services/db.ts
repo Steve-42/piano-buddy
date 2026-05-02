@@ -72,6 +72,58 @@ export async function getAllSessions(): Promise<PracticeSession[]> {
   return db.sessions.orderBy('startTime').reverse().toArray()
 }
 
+// 获取过去 N 天每天的累计弹奏分钟数
+// 返回数组：索引 0 = 今天，索引 i = i 天前
+export async function getDailyActiveMinutes(days: number): Promise<readonly number[]> {
+  const since = new Date()
+  since.setDate(since.getDate() - (days - 1))
+  const sinceDate = since.toISOString().slice(0, 10)
+  const sessions = await db.sessions.where('date').aboveOrEqual(sinceDate).toArray()
+
+  const totalsByDate = new Map<string, number>()
+  for (const s of sessions) {
+    totalsByDate.set(s.date, (totalsByDate.get(s.date) ?? 0) + s.activeDuration)
+  }
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const result: number[] = []
+  for (let i = 0; i < days; i++) {
+    const d = new Date(today)
+    d.setDate(today.getDate() - i)
+    const ds = d.toISOString().slice(0, 10)
+    const sec = totalsByDate.get(ds) ?? 0
+    result.push(Math.round(sec / 60))
+  }
+  return result
+}
+
+// 获取指定年月（0-indexed month）每天累计分钟数
+// 返回长度等于该月天数的数组，索引 i = 该月第 (i+1) 天
+export async function getMonthDailyMinutes(year: number, month: number): Promise<readonly number[]> {
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const startStr = `${year}-${String(month + 1).padStart(2, '0')}-01`
+  const endStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
+
+  const sessions = await db.sessions
+    .where('date')
+    .between(startStr, endStr, true, true)
+    .toArray()
+
+  const totalsByDate = new Map<string, number>()
+  for (const s of sessions) {
+    totalsByDate.set(s.date, (totalsByDate.get(s.date) ?? 0) + s.activeDuration)
+  }
+
+  const result: number[] = []
+  for (let day = 1; day <= daysInMonth; day++) {
+    const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    const sec = totalsByDate.get(ds) ?? 0
+    result.push(Math.round(sec / 60))
+  }
+  return result
+}
+
 // 计算连续练习天数（硬续：一断即清零）
 export async function getStreak(): Promise<number> {
   const info = await getStreakInfo()
