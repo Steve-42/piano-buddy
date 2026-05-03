@@ -18,7 +18,15 @@ export interface UserSettings {
   backgroundImage: string // 自定义背景图片（data URL），空字符串表示使用默认渐变
 }
 
-// Vite 环境变量注入的内置 AI 配置（在 Vercel 后台设置）
+// 同源代理：默认 AI 走 nginx 反代到内部 LLM 服务，key 不出服务器
+// 任何用户访问 piano.huttonorbital.top 都会自动启用 AI，无需自己配置
+export const BUILTIN_PROXY = {
+  endpoint: '/api/llm',
+  model: 'claudeP-opus-4-6',
+} as const
+
+// 兼容旧路径：通过环境变量内置 key（不安全，会进 JS bundle，仅用于兼容老部署）
+// 优先级低于 BUILTIN_PROXY；新部署不要用这个
 export const BUILTIN_LLM = {
   endpoint: import.meta.env.VITE_LLM_ENDPOINT as string || '',
   apiKey: import.meta.env.VITE_LLM_API_KEY as string || '',

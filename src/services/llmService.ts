@@ -1,35 +1,55 @@
 // LLM 服务：调用 OpenAI 兼容 API 生成有温度的鼓励语
+//
+// 配置优先级：
+// 1. 用户在 Settings 里填了自己的 key  → 用用户的 endpoint/key/model
+// 2. 环境变量 VITE_LLM_API_KEY 存在     → 用 BUILTIN_LLM (legacy 路径，key 会进 bundle)
+// 3. fallback                           → 走同源 /api/llm 反代 (key 留在 nginx 服务器，最安全)
 
 import { getSettings } from './db'
-import { BUILTIN_LLM } from '../types'
+import { BUILTIN_LLM, BUILTIN_PROXY } from '../types'
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
 }
 
-// 解析有效的 LLM 配置：用户自定义 > 内置默认
-interface LLMConfig {
+interface ResolvedConfig {
+  endpoint: string
+  model: string
+  apiKey: string  // 空字符串表示走 nginx 注入 (proxy mode)
+  isProxy: boolean
+}
+
+function resolveLLMConfig(settings: {
   llmApiEndpoint: string
   llmApiKey: string
   llmModel: string
-}
-
-function resolveLLMConfig(settings: LLMConfig): LLMConfig | null {
-  // 用户配置了自己的 Key，优先使用
+}): ResolvedConfig {
+  // 1. 用户配置了自己的 Key
   if (settings.llmApiKey) {
-    return settings
-  }
-  // 否则使用内置配置（如果有）
-  if (BUILTIN_LLM.apiKey) {
     return {
-      llmApiEndpoint: BUILTIN_LLM.endpoint,
-      llmApiKey: BUILTIN_LLM.apiKey,
-      llmModel: BUILTIN_LLM.model,
+      endpoint: settings.llmApiEndpoint,
+      model: settings.llmModel,
+      apiKey: settings.llmApiKey,
+      isProxy: false,
     }
   }
-  // 都没有，返回 null
-  return null
+  // 2. legacy: 环境变量内置 key
+  if (BUILTIN_LLM.apiKey) {
+    return {
+      endpoint: BUILTIN_LLM.endpoint,
+      model: BUILTIN_LLM.model,
+      apiKey: BUILTIN_LLM.apiKey,
+      isProxy: false,
+    }
+  }
+  // 3. 默认：走同源 nginx 反代（key 在服务器端注入）
+  return {
+    endpoint: BUILTIN_PROXY.endpoint,
+    model: BUILTIN_PROXY.model,
+    apiKey: '',
+    isProxy: true,
+  }
 }
 
 // 鼓励消息的上下文
@@ -98,14 +118,15 @@ export async function generateEncouragement(
   const settings = await getSettings()
   const config = resolveLLMConfig(settings)
 
-  if (!config) {
+  try {
+    return await callLLM(config, [
+      { role: 'system', content: ENCOURAGEMENT_SYSTEM_PROMPT },
+      { role: 'user', content: buildEncouragementMessage(context) },
+    ])
+  } catch (error) {
+    console.error('LLM 鼓励生成失败:', error)
     return getDefaultEncouragement(context)
   }
-
-  return await callLLM(config, [
-    { role: 'system', content: ENCOURAGEMENT_SYSTEM_PROMPT },
-    { role: 'user', content: buildEncouragementMessage(context) },
-  ])
 }
 
 // 生成每日提醒消息
@@ -116,10 +137,6 @@ export async function generateReminder(context: {
 }): Promise<string> {
   const settings = await getSettings()
   const config = resolveLLMConfig(settings)
-
-  if (!config) {
-    return getDefaultReminder(context)
-  }
 
   const systemPrompt = `你是一个温暖的钢琴练习伙伴。现在需要提醒用户去练琴。
 
@@ -154,8 +171,8 @@ export async function generateReminder(context: {
   }
 }
 
-// 判断是否需要走代理（仅开发服务器支持，生产环境无代理）
-function needsProxy(endpoint: string): boolean {
+// 判断用户自定义 endpoint 是否需要走 dev proxy（HTTPS→HTTP 混合内容问题）
+function needsDevProxy(endpoint: string): boolean {
   if (!import.meta.env.DEV) return false
   if (typeof window === 'undefined') return false
   const pageIsHttps = window.location.protocol === 'https:'
@@ -164,26 +181,26 @@ function needsProxy(endpoint: string): boolean {
 }
 
 // 调用 OpenAI 兼容 API
-async function callLLM(
-  settings: { llmApiEndpoint: string; llmApiKey: string; llmModel: string },
-  messages: ChatMessage[],
-): Promise<string> {
+async function callLLM(config: ResolvedConfig, messages: ChatMessage[]): Promise<string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    Authorization: `Bearer ${settings.llmApiKey}`,
+  }
+  // proxy 模式：不带 Authorization，由 nginx 注入；用户/legacy 模式：带 key
+  if (!config.isProxy && config.apiKey) {
+    headers['Authorization'] = `Bearer ${config.apiKey}`
   }
 
-  // 如果页面是 HTTPS 但 API 是 HTTP，走 Vite 代理避免混合内容限制
-  // 将目标 URL 编码到代理路径中: /api/llm-proxy/<encoded-url>
-  const fetchUrl = needsProxy(settings.llmApiEndpoint)
-    ? `/api/llm-proxy/${encodeURIComponent(settings.llmApiEndpoint)}`
-    : settings.llmApiEndpoint
+  // proxy 路径同源，永远不需要 dev 转发；用户自填的 HTTP endpoint 仍然走老代理
+  const fetchUrl =
+    !config.isProxy && needsDevProxy(config.endpoint)
+      ? `/api/llm-proxy/${encodeURIComponent(config.endpoint)}`
+      : config.endpoint
 
   const response = await fetch(fetchUrl, {
     method: 'POST',
     headers,
     body: JSON.stringify({
-      model: settings.llmModel,
+      model: config.model,
       messages,
       max_tokens: 2000, // 思考模型（如 gemini-2.5-pro）会消耗大量 token 做内部推理
       temperature: 0.8,

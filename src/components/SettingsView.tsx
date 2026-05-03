@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react'
 import { getSettings, updateSettings } from '../services/db'
 import type { UserSettings } from '../types'
-import { DEFAULT_SETTINGS, BUILTIN_LLM } from '../types'
+import { DEFAULT_SETTINGS } from '../types'
 import { PB, PAGE_BG, SERIF } from '../styles/tokens'
 
 interface SettingsViewProps {
@@ -99,7 +99,7 @@ export function SettingsView({ onBack }: SettingsViewProps) {
       <Group>
         <Row label="AI 鼓励">
           <span style={{ fontSize: 12, color: PB.inkDim, marginRight: 6 }}>
-            {settings.llmApiKey ? '自定义' : BUILTIN_LLM.apiKey ? '内置' : '默认文案'}
+            {settings.llmApiKey ? '自定义模型' : '已默认启用'}
           </span>
           <button
             onClick={() => setShowApiAdvanced((v) => !v)}
@@ -111,6 +111,23 @@ export function SettingsView({ onBack }: SettingsViewProps) {
         </Row>
         {showApiAdvanced && (
           <div style={{ padding: '4px 16px 16px' }}>
+            {!settings.llmApiKey && (
+              <div
+                style={{
+                  marginBottom: 12,
+                  padding: '10px 12px',
+                  background: PB.emeraldBg,
+                  border: `1px solid ${PB.emeraldSoft}`,
+                  borderRadius: 10,
+                  fontSize: 12,
+                  color: PB.emeraldDeep,
+                  lineHeight: 1.5,
+                }}
+              >
+                AI 鼓励默认启用，由本站统一提供。想用自己的模型可填下面三项。
+              </div>
+            )}
+
             <FieldLabel>API 地址</FieldLabel>
             <input
               type="url"
@@ -139,25 +156,6 @@ export function SettingsView({ onBack }: SettingsViewProps) {
               placeholder="gpt-4o-mini"
               style={textInput}
             />
-
-            {!settings.llmApiKey && (
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: '10px 12px',
-                  background: PB.emeraldBg,
-                  border: `1px solid ${PB.emeraldSoft}`,
-                  borderRadius: 10,
-                  fontSize: 12,
-                  color: PB.emeraldDeep,
-                  lineHeight: 1.5,
-                }}
-              >
-                {BUILTIN_LLM.apiKey
-                  ? '已启用内置 AI 鼓励，无需配置即可使用。填写自己的 API Key 可切换为自定义模型。'
-                  : '未配置 API Key 时使用内置默认文案。配置后可获得更个性化的 AI 鼓励。'}
-              </div>
-            )}
           </div>
         )}
       </Group>
